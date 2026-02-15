@@ -6,6 +6,7 @@ using Photon.Pun;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.Animations.Rigging;
+using GorillaNetworking;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -21,6 +22,12 @@ public class GorillaWASD : MonoBehaviour
     [Header("Flight Settings")]
     public Key flightKey = Key.F;
     public float flightSpeed = 10f;
+
+    [Header("Mouse Settings")]
+    public Key lockKey = Key.C;
+    private bool isMouseLocked = false;
+    public Color crosshairColor = Color.white;
+    public float dotSize = 4f;
 
     [HideInInspector] public float mouseSensitivity = 0.25f;
     [HideInInspector] public bool smoothCamera = false;
@@ -40,10 +47,16 @@ public class GorillaWASD : MonoBehaviour
     private Transform mainCam;
     private float verticalMomentum = 0f;
     private bool isGrounded = true;
+    private Texture2D dotTexture;
 
     void Start()
     {
         mainCam = Camera.main.transform;
+        
+        dotTexture = new Texture2D(1, 1);
+        dotTexture.SetPixel(0, 0, Color.white);
+        dotTexture.Apply();
+
         StartCoroutine(VRCheckRoutine());
     }
 
@@ -84,6 +97,11 @@ public class GorillaWASD : MonoBehaviour
     {
         if (!initialized) return;
 
+        if (Keyboard.current[lockKey].wasPressedThisFrame)
+        {
+            ToggleMouseLock();
+        }
+
         if (Keyboard.current[flightKey].wasPressedThisFrame)
         {
             isFlying = !isFlying;
@@ -95,12 +113,71 @@ public class GorillaWASD : MonoBehaviour
             }
         }
 
-        if (Mouse.current.rightButton.isPressed)
+        if (isMouseLocked || Mouse.current.rightButton.isPressed)
         {
             Vector2 mouseDelta = Mouse.current.delta.ReadValue();
             rotationVector.x -= mouseDelta.y * mouseSensitivity;
             rotationVector.y += mouseDelta.x * mouseSensitivity;
             rotationVector.x = Mathf.Clamp(rotationVector.x, -90f, 90f);
+        }
+
+        if (Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            MousePointClick();
+        }
+    }
+
+    void ToggleMouseLock()
+    {
+        isMouseLocked = !isMouseLocked;
+
+        if (isMouseLocked)
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+    }
+
+    void OnGUI()
+    {
+        if (isMouseLocked && dotTexture != null)
+        {
+            GUI.color = crosshairColor;
+            float xMin = (Screen.width / 2) - (dotSize / 2);
+            float yMin = (Screen.height / 2) - (dotSize / 2);
+            GUI.DrawTexture(new Rect(xMin, yMin, dotSize, dotSize), dotTexture);
+            GUI.color = Color.white;
+        }
+    }
+
+    void MousePointClick()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        Vector2 mousePos = isMouseLocked ? new Vector2(Screen.width / 2f, Screen.height / 2f) : Mouse.current.position.ReadValue();
+        Ray screenRay = cam.ScreenPointToRay(mousePos);
+        RaycastHit hit;
+
+        if (Physics.Raycast(screenRay, out hit, 10f, -1, QueryTriggerInteraction.Collide))
+        {
+            GorillaPressableButton btn = hit.collider.GetComponentInParent<GorillaPressableButton>();
+            if (btn != null)
+            {
+                btn.ButtonActivation();
+                return;
+            }
+
+            GorillaKeyboardButton kbd = hit.collider.GetComponentInParent<GorillaKeyboardButton>();
+            if (kbd != null)
+            {
+                GorillaComputer.instance.PressButton(kbd);
+            }
         }
     }
 
